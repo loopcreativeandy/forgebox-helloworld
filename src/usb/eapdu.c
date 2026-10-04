@@ -8,6 +8,7 @@
 #include "eapdu_framing.h"
 #include "usb_task.h"
 #include "version.h"
+#include "sol_key.h"
 
 #define RESPONSE_STATUS_LEN   2U
 #define RESPONSE_DATA_MAX     (EAPDU_FRAMING_MAX_PACKET_SIZE - EAPDU_FRAMING_HEADER_SIZE - RESPONSE_STATUS_LEN)
@@ -92,6 +93,19 @@ static void GetDeviceInfoService(const EapduFramingResult_t *req)
     EapduSendResponse(CMD_GET_DEVICE_INFO, req->request_id, RSP_SUCCESS_CODE, (const uint8_t *)json, (uint32_t)n);
 }
 
+static void GetSolAddressService(const EapduFramingResult_t *req)
+{
+    char json[128];
+    int n;
+
+    if (!SolKeyReady()) {
+        EapduSendError(CMD_FB_GET_SOL_ADDRESS, req->request_id, RSP_FAILURE_CODE, "key not loaded");
+        return;
+    }
+    n = snprintf(json, sizeof(json), "{\"address\":\"%s\",\"path\":\"m/44'/501'/0'/0'\"}", SolKeyAddress());
+    EapduSendResponse(CMD_FB_GET_SOL_ADDRESS, req->request_id, RSP_SUCCESS_CODE, (const uint8_t *)json, (uint32_t)n);
+}
+
 static const char *CommandName(uint16_t cmd)
 {
     switch (cmd) {
@@ -107,6 +121,8 @@ static const char *CommandName(uint16_t cmd)
         return "GetDeviceInfo";
     case CMD_GET_DEVICE_USB_PUBKEY:
         return "GetUSBPubkey";
+    case CMD_FB_GET_SOL_ADDRESS:
+        return "GetSolAddress";
     default:
         return "unknown";
     }
@@ -123,6 +139,9 @@ static void Dispatch(const EapduFramingResult_t *req)
         break;
     case CMD_GET_DEVICE_INFO:
         GetDeviceInfoService(req);
+        break;
+    case CMD_FB_GET_SOL_ADDRESS:
+        GetSolAddressService(req);
         break;
     default:
         EapduSendError(req->command_type, req->request_id, PRS_PARSING_DISALLOWED, "not implemented on ForgeBox yet");

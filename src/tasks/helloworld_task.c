@@ -8,6 +8,7 @@
 #include "stdlib.h"
 #include "mhscpu_gpio.h"
 #include "usb_task.h"
+#include "sol_key.h"
 
 #define LVGL_TICK_MS    5
 #define LVGL_GRAM_PIXEL (LCD_DISPLAY_WIDTH * LCD_DISPLAY_HEIGHT / 10)
@@ -72,6 +73,7 @@ static lv_color_t g_lvglCache[LCD_DISPLAY_WIDTH * LCD_DISPLAY_HEIGHT / 10];
 static lv_obj_t *g_container;
 static lv_obj_t *g_hintLabel;
 static lv_obj_t *g_usbLabel;
+static lv_obj_t *g_addrLabel;
 static lv_obj_t *g_snakeObjs[MAX_SNAKE_LEN];
 static lv_obj_t *g_foodObj;
 static lv_obj_t *g_logoObj;
@@ -166,6 +168,15 @@ static void HelloWorldTask(void *argument)
     lv_label_set_long_mode(g_usbLabel, LV_LABEL_LONG_WRAP);
     lv_label_set_text(g_usbLabel, UsbStatusText());
 
+    // Solana address (step 2), filled in once the protocol task has derived the key
+    g_addrLabel = lv_label_create(lv_scr_act());
+    lv_obj_align(g_addrLabel, LV_ALIGN_TOP_MID, 0, 40);
+    lv_obj_set_width(g_addrLabel, LCD_DISPLAY_WIDTH - 20);
+    lv_obj_set_style_text_color(g_addrLabel, lv_color_hex(0xFFD700), 0);
+    lv_obj_set_style_text_font(g_addrLabel, &openSansEnText, 0);
+    lv_label_set_long_mode(g_addrLabel, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(g_addrLabel, "");
+
     // Create snake segments
     for (uint16_t i = 0; i < MAX_SNAKE_LEN; i++) {
         g_snakeObjs[i] = lv_obj_create(g_container);
@@ -214,6 +225,9 @@ static void HelloWorldTask(void *argument)
         if (UsbStatusSeq() != usbStatusSeq) {
             usbStatusSeq = UsbStatusSeq();
             lv_label_set_text(g_usbLabel, UsbStatusText());
+            if (SolKeyReady()) {
+                lv_label_set_text_fmt(g_addrLabel, "Solana DEVNET test key:\n%s", SolKeyAddress());
+            }
         }
 
         if (now - lastButtonCheck >= BUTTON_CHECK_INTERVAL_MS) {

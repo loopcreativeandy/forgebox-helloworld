@@ -15,6 +15,8 @@
 #define CMD_EXPORT_ADDRESS        0x0004U
 #define CMD_GET_DEVICE_INFO       0x0005U
 #define CMD_GET_DEVICE_USB_PUBKEY 0x0006U
+/* ForgeBox-only commands (not in keystone.rs), kept clear of Keystone's range. */
+#define CMD_FB_GET_SOL_ADDRESS    0x0100U
 
 #define RSP_SUCCESS_CODE          0x0000U
 #define RSP_FAILURE_CODE          0x0001U

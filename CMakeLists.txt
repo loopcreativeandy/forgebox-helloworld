@@ -42,6 +42,7 @@ set(EXTERNAL_INCLUDE_PATH
     external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_OTG_Driver/inc
     external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Core/inc
     external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Class/cdc/inc
+    external/monocypher
 )
 
 set(SRC_INCLUDE_PATH
@@ -53,6 +54,7 @@ set(SRC_INCLUDE_PATH
     src/utils
     src/driver/usb
     src/usb
+    src/wallet
 )
 
 set(INCLUDE_DIR
@@ -134,6 +136,9 @@ set(APP_SRC
     src/usb/usb_task.c
     src/usb/eapdu.c
     src/usb/eapdu_framing.c
+    src/wallet/sol_key.c
+    external/monocypher/monocypher.c
+    external/monocypher/monocypher-ed25519.c
 )
 
 set(objsrc 

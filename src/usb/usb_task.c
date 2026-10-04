@@ -16,6 +16,8 @@
 #include "usb_dcd_int.h"
 #include "usb_task.h"
 #include "eapdu.h"
+#include "sol_key.h"
+#include "test_mnemonic.h"
 
 #define RX_QUEUE_DEPTH  32U
 
@@ -97,8 +99,17 @@ void UsbSend(const uint8_t *data, uint32_t len)
 static void ProtocolTask(void *argument)
 {
     UsbFrame_t frame;
+    uint32_t start;
     (void)argument;
     EapduInit();
+    /* Step 2: test key (devnet only). PBKDF2 takes a moment; frames queue up meanwhile. */
+    UsbSetStatus("Wallet: deriving test key...");
+    start = osKernelGetTickCount();
+    if (SolKeyLoad(TEST_MNEMONIC, 0)) {
+        UsbSetStatus("Wallet ready (%lu ms)", (unsigned long)(osKernelGetTickCount() - start));
+    } else {
+        UsbSetStatus("Wallet: key derivation FAILED");
+    }
     while (1) {
         if (xQueueReceive(g_rxQueue, &frame, portMAX_DELAY) == pdTRUE) {
             EapduHandleFrame(frame.data, frame.len, osKernelGetTickCount());
