@@ -11,6 +11,8 @@
 #include "sol_key.h"
 #include "sol_tx.h"
 #include "approval.h"
+#include "ur.h"
+#include "monocypher.h"
 
 #define RESPONSE_STATUS_LEN   2U
 #define RESPONSE_DATA_MAX     (EAPDU_FRAMING_MAX_PACKET_SIZE - EAPDU_FRAMING_HEADER_SIZE - RESPONSE_STATUS_LEN)
@@ -151,6 +153,113 @@ static void SignSolMessageService(const EapduFramingResult_t *req)
     EapduSendResponse(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, RSP_SUCCESS_CODE, (const uint8_t *)json, (uint32_t)n);
 }
 
+/* ---- Stock solana CLI compatibility (agave remote-wallet keystone.rs) ---- */
+
+#define SOLANA_COIN_TYPE  501U
+#define UR_CBOR_MAX       (SOL_MAX_MESSAGE_LEN + 256U)
+
+static uint8_t g_cbor[UR_CBOR_MAX];
+static char g_urOut[512];
+static char g_json[600];
+
+/* 0x06: [coin u32 BE][depth u8][depth x u32 BE] -> {"pubkey": hex} */
+static void GetUsbPubkeyService(const EapduFramingResult_t *req)
+{
+    const uint8_t *d = req->payload;
+    uint32_t path[UR_MAX_PATH_DEPTH];
+    uint8_t secret[64], pubkey[32];
+    size_t depth, n;
+    uint32_t coin;
+
+    if (req->payload_length < 5) {
+        EapduSendError(CMD_GET_DEVICE_USB_PUBKEY, req->request_id, PRS_PARSING_ERROR, "bad path");
+        return;
+    }
+    coin = ((uint32_t)d[0] << 24) | ((uint32_t)d[1] << 16) | ((uint32_t)d[2] << 8) | d[3];
+    depth = d[4];
+    if (coin != SOLANA_COIN_TYPE || depth == 0 || depth > UR_MAX_PATH_DEPTH || req->payload_length != 5U + 4U * depth) {
+        EapduSendError(CMD_GET_DEVICE_USB_PUBKEY, req->request_id, PRS_PARSING_ERROR, "bad path");
+        return;
+    }
+    for (size_t i = 0; i < depth; i++) {
+        const uint8_t *q = d + 5 + 4 * i;
+        path[i] = ((uint32_t)q[0] << 24) | ((uint32_t)q[1] << 16) | ((uint32_t)q[2] << 8) | q[3];
+    }
+    if (!SolDeriveKeypair(path, depth, secret, pubkey)) {
+        EapduSendError(CMD_GET_DEVICE_USB_PUBKEY, req->request_id, PRS_PARSING_ERROR, "path must be fully hardened");
+        return;
+    }
+    crypto_wipe(secret, sizeof(secret));
+    n = (size_t)snprintf(g_json, sizeof(g_json), "{\"pubkey\":\"");
+    for (size_t i = 0; i < 32; i++) {
+        n += (size_t)snprintf(g_json + n, sizeof(g_json) - n, "%02x", pubkey[i]);
+    }
+    n += (size_t)snprintf(g_json + n, sizeof(g_json) - n, "\"}");
+    EapduSendResponse(CMD_GET_DEVICE_USB_PUBKEY, req->request_id, RSP_SUCCESS_CODE, (const uint8_t *)g_json, (uint32_t)n);
+}
+
+/* 0x02: "ur:sol-sign-request/..." -> approve -> {"payload": "ur:sol-signature/..."} */
+static void ResolveUrService(const EapduFramingResult_t *req)
+{
+    char type[UR_TYPE_MAX];
+    size_t cborLen, sigCborLen;
+    SolSignRequest_t sr;
+    uint8_t secret[64], pubkey[32], signature[64], sigCbor[128];
+    char pathText[64];
+    SolTxResult_t parsed;
+    ApprovalResult_t decision;
+    size_t used;
+    int n;
+
+    if (!UrDecode((const char *)req->payload, req->payload_length, type, g_cbor, sizeof(g_cbor), &cborLen)) {
+        EapduSendError(CMD_RESOLVE_UR, req->request_id, PRS_PARSING_ERROR, "ur decode failed");
+        return;
+    }
+    if (strcmp(type, "sol-sign-request") != 0) {
+        UsbSetStatus("ResolveUR: unsupported %s", type);
+        EapduSendError(CMD_RESOLVE_UR, req->request_id, PRS_PARSING_UNMATCHED, "unsupported UR type on ForgeBox");
+        return;
+    }
+    if (!SolSignRequestParse(g_cbor, cborLen, &sr) || sr.signDataLen == 0 || sr.signDataLen > SOL_MAX_MESSAGE_LEN) {
+        EapduSendError(CMD_RESOLVE_UR, req->request_id, PRS_PARSING_ERROR, "cbor decode failed");
+        return;
+    }
+    if (!SolDeriveKeypair(sr.path, sr.pathDepth, secret, pubkey)) {
+        EapduSendError(CMD_RESOLVE_UR, req->request_id, PRS_PARSING_ERROR, "path must be fully hardened");
+        return;
+    }
+    parsed = SolTxSummarize(sr.signData, sr.signDataLen, pubkey, g_summary, sizeof(g_summary));
+    if (parsed != SOL_TX_OK) {
+        crypto_wipe(secret, sizeof(secret));
+        UsbSetStatus("Sign request refused: %s", SolTxResultText(parsed));
+        EapduSendError(CMD_RESOLVE_UR, req->request_id, PRS_PARSING_ERROR, SolTxResultText(parsed));
+        return;
+    }
+    SolFormatPath(sr.path, sr.pathDepth, pathText, sizeof(pathText));
+    used = strlen(g_summary);
+    snprintf(g_summary + used, sizeof(g_summary) - used, "Key: %s\nFrom: %s\n", pathText,
+             sr.origin[0] ? sr.origin : "unknown app");
+    UsbSetStatus("Waiting for approval (solana CLI)...");
+    decision = ApprovalRequest(g_summary, APPROVAL_TIMEOUT_MS);
+    if (decision != APPROVAL_APPROVED) {
+        crypto_wipe(secret, sizeof(secret));
+        UsbSetStatus("Sign request %s", decision == APPROVAL_TIMEOUT ? "timed out" : "REJECTED");
+        EapduSendError(CMD_RESOLVE_UR, req->request_id, PRS_PARSING_REJECTED,
+                       decision == APPROVAL_TIMEOUT ? "approval timed out" : "rejected on device");
+        return;
+    }
+    SolSignWithSecret(secret, sr.signData, sr.signDataLen, signature);
+    crypto_wipe(secret, sizeof(secret));
+    sigCborLen = SolSignatureEncode(&sr, signature, sigCbor, sizeof(sigCbor));
+    if (sigCborLen == 0 || !UrEncode("sol-signature", sigCbor, sigCborLen, g_urOut, sizeof(g_urOut))) {
+        EapduSendError(CMD_RESOLVE_UR, req->request_id, RSP_FAILURE_CODE, "encode failed");
+        return;
+    }
+    UsbSetStatus("SIGNED (solana CLI)");
+    n = snprintf(g_json, sizeof(g_json), "{\"payload\":\"%s\"}", g_urOut);
+    EapduSendResponse(CMD_RESOLVE_UR, req->request_id, RSP_SUCCESS_CODE, (const uint8_t *)g_json, (uint32_t)n);
+}
+
 static const char *CommandName(uint16_t cmd)
 {
     switch (cmd) {
@@ -192,6 +301,12 @@ static void Dispatch(const EapduFramingResult_t *req)
         break;
     case CMD_FB_SIGN_SOL_MESSAGE:
         SignSolMessageService(req);
+        break;
+    case CMD_GET_DEVICE_USB_PUBKEY:
+        GetUsbPubkeyService(req);
+        break;
+    case CMD_RESOLVE_UR:
+        ResolveUrService(req);
         break;
     default:
         EapduSendError(req->command_type, req->request_id, PRS_PARSING_DISALLOWED, "not implemented on ForgeBox yet");

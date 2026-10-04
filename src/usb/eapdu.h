@@ -26,6 +26,7 @@
 #define PRS_PARSING_REJECTED      0x0004U
 #define PRS_PARSING_ERROR         0x0005U
 #define PRS_PARSING_DISALLOWED    0x0006U
+#define PRS_PARSING_UNMATCHED     0x0007U
 
 void EapduInit(void);
 void EapduHandleFrame(const uint8_t *frame, uint32_t len, uint32_t tick);

@@ -139,6 +139,7 @@ set(APP_SRC
     src/wallet/sol_key.c
     src/wallet/sol_tx.c
     src/wallet/approval.c
+    src/wallet/ur.c
     src/driver/hal_touch.c
     src/driver/drv_cst726.c
     src/driver/drv_ft6336.c

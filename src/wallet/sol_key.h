@@ -23,4 +23,10 @@ const char *SolKeyAddress(void);
 const uint8_t *SolKeyPubkey(void);
 void SolKeySign(const uint8_t *msg, size_t len, uint8_t signature[64]);
 
+/* Any hardened SLIP-10 path from the loaded seed (stock solana CLI asks for m/44'/501'[/a'[/0']]).
+ * path entries are raw BIP32 indexes; all must be hardened (bit 31), max depth 10. */
+bool SolDeriveKeypair(const uint32_t *path, size_t depth, uint8_t secretKey[64], uint8_t pubkey[32]);
+void SolSignWithSecret(const uint8_t secretKey[64], const uint8_t *msg, size_t len, uint8_t signature[64]);
+void SolFormatPath(const uint32_t *path, size_t depth, char *out, size_t outSize);
+
 #endif

@@ -1,5 +1,6 @@
 /* Solana key for the ForgeBox: BIP39 seed -> SLIP-10 m/44'/501'/a'/0' -> Ed25519 (Monocypher).
  * Same derivation as solana-keygen "prompt://?key=a/0", Phantom and Ledger. */
+#include <stdio.h>
 #include <string.h>
 #include "monocypher.h"
 #include "monocypher-ed25519.h"
@@ -10,6 +11,7 @@
 
 static uint8_t g_secretKey[64];     /* Monocypher layout: seed(32) || pubkey(32) */
 static uint8_t g_pubkey[32];
+static uint8_t g_seed[64];          /* TEST seed kept in RAM for per-path derivation (devnet only) */
 static char g_address[SOL_ADDRESS_MAX_LEN];
 static volatile bool g_ready = false;
 
@@ -111,6 +113,7 @@ bool SolKeyLoad(const char *mnemonic, uint32_t account)
 
     g_ready = false;
     Bip39MnemonicToSeed(mnemonic, "", seed);
+    memcpy(g_seed, seed, sizeof(g_seed));
     Slip10Ed25519Derive(seed, sizeof(seed), path, 4, key);
     crypto_wipe(seed, sizeof(seed));
     crypto_ed25519_key_pair(g_secretKey, g_pubkey, key);    /* wipes key */
@@ -139,4 +142,34 @@ const uint8_t *SolKeyPubkey(void)
 void SolKeySign(const uint8_t *msg, size_t len, uint8_t signature[64])
 {
     crypto_ed25519_sign(signature, g_secretKey, msg, len);
+}
+
+bool SolDeriveKeypair(const uint32_t *path, size_t depth, uint8_t secretKey[64], uint8_t pubkey[32])
+{
+    uint8_t key[32];
+    if (!g_ready || depth == 0 || depth > 10) {
+        return false;
+    }
+    for (size_t i = 0; i < depth; i++) {
+        if ((path[i] & HARDENED) == 0) {
+            return false;   /* ed25519 SLIP-10 has no public (non-hardened) derivation */
+        }
+    }
+    Slip10Ed25519Derive(g_seed, sizeof(g_seed), path, depth, key);
+    crypto_ed25519_key_pair(secretKey, pubkey, key);    /* wipes key */
+    return true;
+}
+
+void SolSignWithSecret(const uint8_t secretKey[64], const uint8_t *msg, size_t len, uint8_t signature[64])
+{
+    crypto_ed25519_sign(signature, secretKey, msg, len);
+}
+
+void SolFormatPath(const uint32_t *path, size_t depth, char *out, size_t outSize)
+{
+    size_t n = (size_t)snprintf(out, outSize, "m");
+    for (size_t i = 0; i < depth && n < outSize; i++) {
+        n += (size_t)snprintf(out + n, outSize - n, "/%lu%s", (unsigned long)(path[i] & 0x7FFFFFFFUL),
+                              (path[i] & HARDENED) ? "'" : "");
+    }
 }
