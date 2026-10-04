@@ -137,6 +137,16 @@ set(APP_SRC
     src/usb/eapdu.c
     src/usb/eapdu_framing.c
     src/wallet/sol_key.c
+    src/wallet/sol_tx.c
+    src/wallet/approval.c
+    src/driver/hal_touch.c
+    src/driver/drv_cst726.c
+    src/driver/drv_ft6336.c
+    src/driver/drv_gsl1691.c
+    src/driver/drv_cst3xx.c
+    src/driver/drv_i2c.c
+    src/driver/hardware_version.c
+    src/utils/log_print.c
     external/monocypher/monocypher.c
     external/monocypher/monocypher-ed25519.c
 )

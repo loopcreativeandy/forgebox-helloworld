@@ -17,6 +17,7 @@
 #define CMD_GET_DEVICE_USB_PUBKEY 0x0006U
 /* ForgeBox-only commands (not in keystone.rs), kept clear of Keystone's range. */
 #define CMD_FB_GET_SOL_ADDRESS    0x0100U
+#define CMD_FB_SIGN_SOL_MESSAGE   0x0101U   /* data = serialized message; reply {"signature": base58} */
 
 #define RSP_SUCCESS_CODE          0x0000U
 #define RSP_FAILURE_CODE          0x0001U

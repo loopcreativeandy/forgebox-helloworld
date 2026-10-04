@@ -9,6 +9,9 @@
 #include "mhscpu_gpio.h"
 #include "usb_task.h"
 #include "sol_key.h"
+#include "approval.h"
+#include "hal_touch.h"
+#include "err_code.h"
 
 #define LVGL_TICK_MS    5
 #define LVGL_GRAM_PIXEL (LCD_DISPLAY_WIDTH * LCD_DISPLAY_HEIGHT / 10)
@@ -61,6 +64,9 @@ static bool IsSafePosition(int16_t x, int16_t y);
 static bool IsDirectionSafe(Direction dir);
 static bool IsInLogoArea(int16_t x, int16_t y);
 static bool IsInLabelArea(int16_t x, int16_t y);
+static void ApprovalUiInit(void);
+static void ApprovalUiUpdate(void);
+static void TouchRead(lv_indev_drv_t *drv, lv_indev_data_t *data);
 static void PowerButtonInit(void);
 static void PowerButtonCheck(void);
 static void RestartDevice(void);
@@ -74,6 +80,15 @@ static lv_obj_t *g_container;
 static lv_obj_t *g_hintLabel;
 static lv_obj_t *g_usbLabel;
 static lv_obj_t *g_addrLabel;
+static lv_obj_t *g_approvalPanel;
+static lv_obj_t *g_approvalLabel;
+static bool g_approvalShown = false;
+static uint32_t g_approvalSeq = 0;
+static bool g_touchOk = false;
+static lv_coord_t g_lastTouchX = 0;
+static lv_coord_t g_lastTouchY = 0;
+
+#define APPROVE_SHORT_PRESS_MS 1000
 static lv_obj_t *g_snakeObjs[MAX_SNAKE_LEN];
 static lv_obj_t *g_foodObj;
 static lv_obj_t *g_logoObj;
@@ -92,6 +107,7 @@ static uint32_t g_buttonPressStartTime = 0;
 static bool g_buttonPressed = false;
 
 LV_FONT_DECLARE(openSansEnText);
+LV_FONT_DECLARE(openSansEnTitle);
 
 void CreateHelloWorldTask(void)
 {
@@ -203,6 +219,7 @@ static void HelloWorldTask(void *argument)
     lv_img_set_src(g_logoObj, &imgDevLogo);
     lv_obj_align(g_logoObj, LV_ALIGN_TOP_MID, 0, 78);
 
+    ApprovalUiInit();
     PowerButtonInit();
     
     SnakeGameInit();
@@ -230,6 +247,8 @@ static void HelloWorldTask(void *argument)
             }
         }
 
+        ApprovalUiUpdate();
+
         if (now - lastButtonCheck >= BUTTON_CHECK_INTERVAL_MS) {
             lastButtonCheck = now;
             PowerButtonCheck();
@@ -238,7 +257,9 @@ static void HelloWorldTask(void *argument)
         if (now - lastUpdate >= GAME_SPEED_MS) {
             lastUpdate = now;
             
-            if (!g_gameOver) {
+            if (g_approvalShown) {
+                // snake pauses while a signing request is on screen
+            } else if (!g_gameOver) {
                 SnakeGameUpdate();
                 SnakeGameDraw();
             } else {
@@ -609,6 +630,11 @@ static void PowerButtonCheck(void)
     bool pressed = (GPIO_ReadInputDataBit(BUTTON_INT_PORT, BUTTON_INT_PIN) == Bit_RESET);
 
     if (!pressed) {
+        // Step 3 fallback: a short press approves a pending signing request
+        if (g_buttonPressed && g_approvalShown && now - g_buttonPressStartTime < APPROVE_SHORT_PRESS_MS) {
+            printf("approval: power key\r\n");
+            ApprovalResolve(true);
+        }
         g_buttonPressed = false;
         return;
     }
@@ -628,4 +654,116 @@ static void RestartDevice(void)
 {
     printf("Power button long press detected, restarting...\n");
     NVIC_SystemReset();
+}
+
+/* ---------------- Step 3: signing approval UI ---------------- */
+
+static void TouchRead(lv_indev_drv_t *drv, lv_indev_data_t *data)
+{
+    TouchStatus_t status = {0};
+    (void)drv;
+    if (TouchGetStatus(&status) == SUCCESS_CODE && status.touch &&
+            status.x < LCD_DISPLAY_WIDTH && status.y < LCD_DISPLAY_HEIGHT) {
+        g_lastTouchX = status.x;
+        g_lastTouchY = status.y;
+        data->state = LV_INDEV_STATE_PRESSED;
+    } else {
+        data->state = LV_INDEV_STATE_RELEASED;
+    }
+    data->point.x = g_lastTouchX;
+    data->point.y = g_lastTouchY;
+}
+
+static void ApprovalButtonEvent(lv_event_t *e)
+{
+    bool approve = (bool)(uintptr_t)lv_event_get_user_data(e);
+    printf("approval: touch %s\r\n", approve ? "APPROVE" : "REJECT");
+    ApprovalResolve(approve);
+}
+
+static lv_obj_t *ApprovalButton(lv_obj_t *parent, const char *text, uint32_t color, lv_align_t align, bool approve)
+{
+    lv_obj_t *btn = lv_btn_create(parent);
+    lv_obj_t *label;
+    lv_obj_set_size(btn, 200, 90);
+    lv_obj_align(btn, align, approve ? -20 : 20, -30);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(color), 0);
+    lv_obj_add_event_cb(btn, ApprovalButtonEvent, LV_EVENT_CLICKED, (void *)(uintptr_t)approve);
+    label = lv_label_create(btn);
+    lv_obj_set_style_text_font(label, &openSansEnTitle, 0);
+    lv_label_set_text(label, text);
+    lv_obj_center(label);
+    return btn;
+}
+
+static void ApprovalUiInit(void)
+{
+    static lv_indev_drv_t indevDrv;
+    lv_obj_t *title;
+    lv_obj_t *hint;
+    TouchStatus_t probe = {0};
+
+    TouchInit(NULL);
+    g_touchOk = (TouchGetStatus(&probe) == SUCCESS_CODE);
+    printf("touch %s\r\n", g_touchOk ? "ok" : "not available");
+    if (g_touchOk) {
+        lv_indev_drv_init(&indevDrv);
+        indevDrv.type = LV_INDEV_TYPE_POINTER;
+        indevDrv.read_cb = TouchRead;
+        lv_indev_drv_register(&indevDrv);
+    }
+
+    g_approvalPanel = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(g_approvalPanel, LCD_DISPLAY_WIDTH, LCD_DISPLAY_HEIGHT);
+    lv_obj_align(g_approvalPanel, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_style_bg_color(g_approvalPanel, lv_color_hex(0x101018), 0);
+    lv_obj_set_style_bg_opa(g_approvalPanel, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(g_approvalPanel, 0, 0);
+    lv_obj_set_style_radius(g_approvalPanel, 0, 0);
+    lv_obj_clear_flag(g_approvalPanel, LV_OBJ_FLAG_SCROLLABLE);
+
+    title = lv_label_create(g_approvalPanel);
+    lv_obj_set_style_text_font(title, &openSansEnTitle, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(0xFFD700), 0);
+    lv_label_set_text(title, "Sign Solana transaction?");
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
+
+    g_approvalLabel = lv_label_create(g_approvalPanel);
+    lv_obj_set_width(g_approvalLabel, LCD_DISPLAY_WIDTH - 40);
+    lv_obj_set_style_text_font(g_approvalLabel, &openSansEnText, 0);
+    lv_obj_set_style_text_color(g_approvalLabel, lv_color_hex(0xFFFFFF), 0);
+    lv_label_set_long_mode(g_approvalLabel, LV_LABEL_LONG_WRAP);
+    lv_obj_align(g_approvalLabel, LV_ALIGN_TOP_LEFT, 0, 80);
+
+    hint = lv_label_create(g_approvalPanel);
+    lv_obj_set_width(hint, LCD_DISPLAY_WIDTH - 40);
+    lv_obj_set_style_text_font(hint, &openSansEnText, 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(0xA0A0A0), 0);
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(hint, g_touchOk ? "DEVNET test key. Short press on the power key also approves.\nNo answer in 60 s = reject."
+                                      : "Touch not available: SHORT press power key = approve.\nNo answer in 60 s = reject.");
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -140);
+
+    if (g_touchOk) {
+        ApprovalButton(g_approvalPanel, "Reject", 0xC0392B, LV_ALIGN_BOTTOM_RIGHT, false);
+        ApprovalButton(g_approvalPanel, "Approve", 0x27AE60, LV_ALIGN_BOTTOM_LEFT, true);
+    }
+    lv_obj_add_flag(g_approvalPanel, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void ApprovalUiUpdate(void)
+{
+    uint32_t seq;
+    bool pending = ApprovalPending(&seq);
+
+    if (pending && (!g_approvalShown || seq != g_approvalSeq)) {
+        g_approvalSeq = seq;
+        g_approvalShown = true;
+        lv_label_set_text(g_approvalLabel, ApprovalText());
+        lv_obj_clear_flag(g_approvalPanel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(g_approvalPanel);
+    } else if (!pending && g_approvalShown) {
+        g_approvalShown = false;
+        lv_obj_add_flag(g_approvalPanel, LV_OBJ_FLAG_HIDDEN);
+    }
 }

@@ -9,6 +9,8 @@
 #include "usb_task.h"
 #include "version.h"
 #include "sol_key.h"
+#include "sol_tx.h"
+#include "approval.h"
 
 #define RESPONSE_STATUS_LEN   2U
 #define RESPONSE_DATA_MAX     (EAPDU_FRAMING_MAX_PACKET_SIZE - EAPDU_FRAMING_HEADER_SIZE - RESPONSE_STATUS_LEN)
@@ -106,6 +108,49 @@ static void GetSolAddressService(const EapduFramingResult_t *req)
     EapduSendResponse(CMD_FB_GET_SOL_ADDRESS, req->request_id, RSP_SUCCESS_CODE, (const uint8_t *)json, (uint32_t)n);
 }
 
+static char g_summary[SOL_SUMMARY_MAX_LEN];
+
+static void SignSolMessageService(const EapduFramingResult_t *req)
+{
+    SolTxResult_t parsed;
+    ApprovalResult_t decision;
+    uint8_t signature[64];
+    char sigB58[100];
+    char json[160];
+    int n;
+
+    if (!SolKeyReady()) {
+        EapduSendError(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, RSP_FAILURE_CODE, "key not loaded");
+        return;
+    }
+    if (req->payload_length == 0U || req->payload_length > SOL_MAX_MESSAGE_LEN) {
+        EapduSendError(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, PRS_PARSING_ERROR, "message length out of range");
+        return;
+    }
+    parsed = SolTxSummarize(req->payload, req->payload_length, SolKeyPubkey(), g_summary, sizeof(g_summary));
+    if (parsed != SOL_TX_OK) {
+        UsbSetStatus("Sign request refused: %s", SolTxResultText(parsed));
+        EapduSendError(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, PRS_PARSING_ERROR, SolTxResultText(parsed));
+        return;
+    }
+    UsbSetStatus("Waiting for approval...");
+    decision = ApprovalRequest(g_summary, APPROVAL_TIMEOUT_MS);
+    if (decision != APPROVAL_APPROVED) {
+        UsbSetStatus("Sign request %s", decision == APPROVAL_TIMEOUT ? "timed out" : "REJECTED");
+        EapduSendError(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, PRS_PARSING_REJECTED,
+                       decision == APPROVAL_TIMEOUT ? "approval timed out" : "rejected on device");
+        return;
+    }
+    SolKeySign(req->payload, req->payload_length, signature);
+    if (!Base58Encode(signature, sizeof(signature), sigB58, sizeof(sigB58))) {
+        EapduSendError(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, RSP_FAILURE_CODE, "encode failed");
+        return;
+    }
+    UsbSetStatus("SIGNED");
+    n = snprintf(json, sizeof(json), "{\"signature\":\"%s\"}", sigB58);
+    EapduSendResponse(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, RSP_SUCCESS_CODE, (const uint8_t *)json, (uint32_t)n);
+}
+
 static const char *CommandName(uint16_t cmd)
 {
     switch (cmd) {
@@ -123,6 +168,8 @@ static const char *CommandName(uint16_t cmd)
         return "GetUSBPubkey";
     case CMD_FB_GET_SOL_ADDRESS:
         return "GetSolAddress";
+    case CMD_FB_SIGN_SOL_MESSAGE:
+        return "SignSolMessage";
     default:
         return "unknown";
     }
@@ -142,6 +189,9 @@ static void Dispatch(const EapduFramingResult_t *req)
         break;
     case CMD_FB_GET_SOL_ADDRESS:
         GetSolAddressService(req);
+        break;
+    case CMD_FB_SIGN_SOL_MESSAGE:
+        SignSolMessageService(req);
         break;
     default:
         EapduSendError(req->command_type, req->request_id, PRS_PARSING_DISALLOWED, "not implemented on ForgeBox yet");
