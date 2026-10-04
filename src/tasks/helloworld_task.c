@@ -250,6 +250,7 @@ static void HelloWorldTask(void *argument)
             WDT_ReloadCounter();
         }
 
+        CrashUiStage(1);
         if (UsbStatusSeq() != usbStatusSeq) {
             usbStatusSeq = UsbStatusSeq();
             lv_label_set_text(g_usbLabel, UsbStatusText());
@@ -258,13 +259,16 @@ static void HelloWorldTask(void *argument)
             }
         }
 
+        CrashUiStage(2);
         ApprovalUiUpdate();
 
+        CrashUiStage(3);
         if (now - lastButtonCheck >= BUTTON_CHECK_INTERVAL_MS) {
             lastButtonCheck = now;
             PowerButtonCheck();
         }
 
+        CrashUiStage(4);
         if (now - lastUpdate >= GAME_SPEED_MS) {
             lastUpdate = now;
             
@@ -283,7 +287,9 @@ static void HelloWorldTask(void *argument)
             }
         }
         
+        CrashUiStage(5);
         lv_timer_handler();
+        CrashUiStage(0);
         osDelay(5);
     }
 }
@@ -672,8 +678,12 @@ static void RestartDevice(void)
 static void TouchRead(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
     TouchStatus_t status = {0};
+    int32_t ret;
     (void)drv;
-    if (TouchGetStatus(&status) == SUCCESS_CODE && status.touch &&
+    CrashUiStage(6);
+    ret = TouchGetStatus(&status);
+    CrashUiStage(5);
+    if (ret == SUCCESS_CODE && status.touch &&
             status.x < LCD_DISPLAY_WIDTH && status.y < LCD_DISPLAY_HEIGHT) {
         g_lastTouchX = status.x;
         g_lastTouchY = status.y;
@@ -688,8 +698,10 @@ static void TouchRead(lv_indev_drv_t *drv, lv_indev_data_t *data)
 static void ApprovalButtonEvent(lv_event_t *e)
 {
     bool approve = (bool)(uintptr_t)lv_event_get_user_data(e);
+    CrashUiStage(7);
     printf("approval: touch %s\r\n", approve ? "APPROVE" : "REJECT");
     ApprovalResolve(approve);
+    CrashUiStage(5);
 }
 
 static lv_obj_t *ApprovalButton(lv_obj_t *parent, const char *text, uint32_t color, lv_align_t align, bool approve)
@@ -774,6 +786,7 @@ static void ApprovalUiUpdate(void)
         lv_obj_clear_flag(g_approvalPanel, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(g_approvalPanel);
     } else if (!pending && g_approvalShown) {
+        CrashUiStage(8);
         g_approvalShown = false;
         lv_obj_add_flag(g_approvalPanel, LV_OBJ_FLAG_HIDDEN);
     }

@@ -9,6 +9,8 @@
 #include <stddef.h>
 
 void CrashStage(uint32_t stage);
+/* UI-task breadcrumb (the UI task feeds the watchdog, so a hang there = watchdog reset). */
+void CrashUiStage(uint32_t stage);
 void CrashAssert(const char *file, uint32_t line);
 /* Call once at boot, before the scheduler: formats the previous record (if any) and clears it. */
 void CrashLogBootReport(void);

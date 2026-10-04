@@ -20,7 +20,9 @@ uint32_t g_testCmdRcvCount = 0;
 
 static void WdtInit(void)
 {
-    WDT_ModeConfig(WDT_Mode_CPUReset);
+    /* Interrupt mode: the first timeout raises the watchdog interrupt (NMI -> crashlog records
+     * where the CPU was stuck and resets); if it is not handled, the second timeout resets. */
+    WDT_ModeConfig(WDT_Mode_Interrupt);
     WDT_SetReload(WDT_RELOAD_MAX);
     WDT_ReloadCounter();
     WDT_Enable();
