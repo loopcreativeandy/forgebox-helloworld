@@ -221,7 +221,7 @@ SolTxResult_t SolTxSummarize(const uint8_t *msg, size_t len, const uint8_t signe
             } else {
                 Append(&o, "Compute budget setting\n");
             }
-        } else if (KeyIsBase58(progKey, "MemoSq4gqABAXKb96qnH8TysNcJ9yDsX6kqQhUM3QFyt") ||
+        } else if (KeyIsBase58(progKey, "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr") ||
                    KeyIsBase58(progKey, "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo")) {
             Append(&o, "Memo: \"");
             for (uint16_t k = 0; k < dLen && k < 80U; k++) {
