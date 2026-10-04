@@ -4,6 +4,7 @@
 #include "stdio.h"
 #include "drv_gd25qxx.h"
 #include "flash_address.h"
+#include "crashlog.h"
 
 #ifdef COMPILE_SIMULATOR
 #include "stdio.h"
@@ -26,7 +27,7 @@ void ShowAssert(const char *file, uint32_t len)
     // PrintErrorInfoOnLcd();
     // snprintf_s(assertStr, BUFFER_SIZE_256, "assert,file=%s,line=%d", file, len);
     // Gd25FlashWriteBufferNoMutex(SPI_FLASH_ADDR_ERR_INFO, (uint8_t *)assertStr, strnlen_s(assertStr, sizeof(assertStr) - 1) + 1);
-    while (1);
+    CrashAssert(file, len);
 }
 
 #endif

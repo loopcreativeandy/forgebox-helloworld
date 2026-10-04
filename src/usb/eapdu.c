@@ -13,6 +13,7 @@
 #include "approval.h"
 #include "ur.h"
 #include "monocypher.h"
+#include "crashlog.h"
 
 #define RESPONSE_STATUS_LEN   2U
 #define RESPONSE_DATA_MAX     (EAPDU_FRAMING_MAX_PACKET_SIZE - EAPDU_FRAMING_HEADER_SIZE - RESPONSE_STATUS_LEN)
@@ -129,6 +130,7 @@ static void SignSolMessageService(const EapduFramingResult_t *req)
         EapduSendError(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, PRS_PARSING_ERROR, "message length out of range");
         return;
     }
+    CrashStage(101);
     parsed = SolTxSummarize(req->payload, req->payload_length, SolKeyPubkey(), g_summary, sizeof(g_summary));
     if (parsed != SOL_TX_OK) {
         UsbSetStatus("Sign request refused: %s", SolTxResultText(parsed));
@@ -136,19 +138,24 @@ static void SignSolMessageService(const EapduFramingResult_t *req)
         return;
     }
     UsbSetStatus("Waiting for approval...");
+    CrashStage(105);
     decision = ApprovalRequest(g_summary, APPROVAL_TIMEOUT_MS);
+    CrashStage(106);
     if (decision != APPROVAL_APPROVED) {
         UsbSetStatus("Sign request %s", decision == APPROVAL_TIMEOUT ? "timed out" : "REJECTED");
         EapduSendError(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, PRS_PARSING_REJECTED,
                        decision == APPROVAL_TIMEOUT ? "approval timed out" : "rejected on device");
         return;
     }
+    CrashStage(107);
     SolKeySign(req->payload, req->payload_length, signature);
+    CrashStage(108);
     if (!Base58Encode(signature, sizeof(signature), sigB58, sizeof(sigB58))) {
         EapduSendError(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, RSP_FAILURE_CODE, "encode failed");
         return;
     }
     UsbSetStatus("SIGNED");
+    CrashStage(109);
     n = snprintf(json, sizeof(json), "{\"signature\":\"%s\"}", sigB58);
     EapduSendResponse(CMD_FB_SIGN_SOL_MESSAGE, req->request_id, RSP_SUCCESS_CODE, (const uint8_t *)json, (uint32_t)n);
 }
@@ -211,6 +218,7 @@ static void ResolveUrService(const EapduFramingResult_t *req)
     size_t used;
     int n;
 
+    CrashStage(201);
     if (!UrDecode((const char *)req->payload, req->payload_length, type, g_cbor, sizeof(g_cbor), &cborLen)) {
         EapduSendError(CMD_RESOLVE_UR, req->request_id, PRS_PARSING_ERROR, "ur decode failed");
         return;
@@ -220,14 +228,17 @@ static void ResolveUrService(const EapduFramingResult_t *req)
         EapduSendError(CMD_RESOLVE_UR, req->request_id, PRS_PARSING_UNMATCHED, "unsupported UR type on ForgeBox");
         return;
     }
+    CrashStage(202);
     if (!SolSignRequestParse(g_cbor, cborLen, &sr) || sr.signDataLen == 0 || sr.signDataLen > SOL_MAX_MESSAGE_LEN) {
         EapduSendError(CMD_RESOLVE_UR, req->request_id, PRS_PARSING_ERROR, "cbor decode failed");
         return;
     }
+    CrashStage(203);
     if (!SolDeriveKeypair(sr.path, sr.pathDepth, secret, pubkey)) {
         EapduSendError(CMD_RESOLVE_UR, req->request_id, PRS_PARSING_ERROR, "path must be fully hardened");
         return;
     }
+    CrashStage(204);
     parsed = SolTxSummarize(sr.signData, sr.signDataLen, pubkey, g_summary, sizeof(g_summary));
     if (parsed != SOL_TX_OK) {
         crypto_wipe(secret, sizeof(secret));
@@ -240,7 +251,9 @@ static void ResolveUrService(const EapduFramingResult_t *req)
     snprintf(g_summary + used, sizeof(g_summary) - used, "Key: %s\nFrom: %s\n", pathText,
              sr.origin[0] ? sr.origin : "unknown app");
     UsbSetStatus("Waiting for approval (solana CLI)...");
+    CrashStage(205);
     decision = ApprovalRequest(g_summary, APPROVAL_TIMEOUT_MS);
+    CrashStage(206);
     if (decision != APPROVAL_APPROVED) {
         crypto_wipe(secret, sizeof(secret));
         UsbSetStatus("Sign request %s", decision == APPROVAL_TIMEOUT ? "timed out" : "REJECTED");
@@ -248,15 +261,20 @@ static void ResolveUrService(const EapduFramingResult_t *req)
                        decision == APPROVAL_TIMEOUT ? "approval timed out" : "rejected on device");
         return;
     }
+    CrashStage(207);
     SolSignWithSecret(secret, sr.signData, sr.signDataLen, signature);
     crypto_wipe(secret, sizeof(secret));
+    CrashStage(208);
     sigCborLen = SolSignatureEncode(&sr, signature, sigCbor, sizeof(sigCbor));
     if (sigCborLen == 0 || !UrEncode("sol-signature", sigCbor, sigCborLen, g_urOut, sizeof(g_urOut))) {
         EapduSendError(CMD_RESOLVE_UR, req->request_id, RSP_FAILURE_CODE, "encode failed");
         return;
     }
+    CrashStage(209);
     UsbSetStatus("SIGNED (solana CLI)");
+    CrashStage(210);
     n = snprintf(g_json, sizeof(g_json), "{\"payload\":\"%s\"}", g_urOut);
+    CrashStage(211);
     EapduSendResponse(CMD_RESOLVE_UR, req->request_id, RSP_SUCCESS_CODE, (const uint8_t *)g_json, (uint32_t)n);
 }
 
@@ -324,6 +342,7 @@ void EapduHandleFrame(const uint8_t *frame, uint32_t len, uint32_t tick)
     switch (res.status) {
     case EAPDU_FRAMING_COMPLETE:
         Dispatch(&res);
+        CrashStage(0);
         EapduFramingReset(&g_framing);
         break;
     case EAPDU_FRAMING_WAITING:

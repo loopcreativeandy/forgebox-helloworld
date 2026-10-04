@@ -135,7 +135,11 @@ See http://www.FreeRTOS.org/RTOS-Cortex-M3-M4.html. */
 /* Normal assert() semantics without relying on the provision of an assert.h
 header file. */
 /* USER CODE BEGIN 1 */
-#define configASSERT( x ) if ((x) == 0) {printf("assert file=%s, line=%d\r\n", __FILE__, __LINE__); taskDISABLE_INTERRUPTS(); for( ;; );}
+/* ForgeBox: record + reset instead of spinning until the watchdog fires (src/utils/crashlog.c) */
+#if !defined(__ASSEMBLER__) && !defined(__IAR_SYSTEMS_ASM__)
+void CrashAssert(const char *file, unsigned long line);
+#endif
+#define configASSERT( x ) if ((x) == 0) {CrashAssert(__FILE__, __LINE__);}
 /* USER CODE END 1 */
 
 /* Definitions that map the FreeRTOS port interrupt handlers to their CMSIS

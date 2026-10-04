@@ -58,6 +58,12 @@ SECTIONS
 		_ebss = .;
 	} > SRAM
 
+	/* crash record + breadcrumb, survives a reset (src/utils/crashlog.c) */
+	.noinit_crash 0x200FF000 (NOLOAD) :
+	{
+		*(.noinit_crash)
+	} > SRAM
+
 	.data_parser_section 0x200FC000 (NOLOAD) :
 	{
 		__data_parser_start = .;

@@ -10,6 +10,7 @@
 #include "mhscpu_wdt.h"
 #include "helloworld_task.h"
 #include "usb_task.h"
+#include "crashlog.h"
 #include "cmsis_os.h"
 
 #define TEST_CMD_MAX_LENGTH     3072
@@ -54,6 +55,7 @@ void CmdIsrRcvByte(uint8_t byte)
 
 int main(void)
 {
+    CrashLogBootReport();      /* first: read the record from the previous run before anything touches RAM */
     __enable_irq();
     SystemClockInit();
     Uart0Init(CmdIsrRcvByte);

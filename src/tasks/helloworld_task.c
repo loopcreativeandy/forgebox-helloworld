@@ -12,6 +12,7 @@
 #include "approval.h"
 #include "hal_touch.h"
 #include "err_code.h"
+#include "crashlog.h"
 
 #define LVGL_TICK_MS    5
 #define LVGL_GRAM_PIXEL (LCD_DISPLAY_WIDTH * LCD_DISPLAY_HEIGHT / 10)
@@ -192,6 +193,16 @@ static void HelloWorldTask(void *argument)
     lv_obj_set_style_text_font(g_addrLabel, &openSansEnText, 0);
     lv_label_set_long_mode(g_addrLabel, LV_LABEL_LONG_WRAP);
     lv_label_set_text(g_addrLabel, "");
+
+    if (CrashLogReportText()[0] != '\0') {
+        lv_obj_t *crashLabel = lv_label_create(lv_scr_act());
+        lv_obj_align(crashLabel, LV_ALIGN_BOTTOM_MID, 0, -10);
+        lv_obj_set_width(crashLabel, LCD_DISPLAY_WIDTH - 20);
+        lv_obj_set_style_text_color(crashLabel, lv_color_hex(0xFF5050), 0);
+        lv_obj_set_style_text_font(crashLabel, &openSansEnText, 0);
+        lv_label_set_long_mode(crashLabel, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(crashLabel, CrashLogReportText());
+    }
 
     // Create snake segments
     for (uint16_t i = 0; i < MAX_SNAKE_LEN; i++) {

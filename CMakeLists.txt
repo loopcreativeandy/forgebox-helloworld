@@ -119,6 +119,7 @@ set(APP_SRC
     src/ram/psram_heap_4.c
     src/ram/user_memory.c
     src/utils/assert.c
+    src/utils/crashlog.c
     src/utils/user_delay.c
     src/utils/user_utils.c
     src/config/version.c
