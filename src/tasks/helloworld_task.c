@@ -13,6 +13,7 @@
 #include "hal_touch.h"
 #include "err_code.h"
 #include "crashlog.h"
+#include "hardware_version.h"
 
 #define LVGL_TICK_MS    5
 #define LVGL_GRAM_PIXEL (LCD_DISPLAY_WIDTH * LCD_DISPLAY_HEIGHT / 10)
@@ -681,7 +682,10 @@ static void TouchRead(lv_indev_drv_t *drv, lv_indev_data_t *data)
     int32_t ret;
     (void)drv;
     CrashUiStage(6);
+    /* Same as keystone3-firmware's touchpad_task.c: no context switch in the middle of the I2C read */
+    osKernelLock();
     ret = TouchGetStatus(&status);
+    osKernelUnlock();
     CrashUiStage(5);
     if (ret == SUCCESS_CODE && status.touch &&
             status.x < LCD_DISPLAY_WIDTH && status.y < LCD_DISPLAY_HEIGHT) {
@@ -726,6 +730,10 @@ static void ApprovalUiInit(void)
     lv_obj_t *hint;
     TouchStatus_t probe = {0};
 
+    /* The CST726 touch driver asks for the hardware version on its first real touch; that
+     * measurement sleeps (ADC), which is not allowed inside the osKernelLock in TouchRead.
+     * keystone3-firmware measures it once at boot; do the same here. */
+    (void)GetHardwareVersion();
     TouchInit(NULL);
     g_touchOk = (TouchGetStatus(&probe) == SUCCESS_CODE);
     printf("touch %s\r\n", g_touchOk ? "ok" : "not available");

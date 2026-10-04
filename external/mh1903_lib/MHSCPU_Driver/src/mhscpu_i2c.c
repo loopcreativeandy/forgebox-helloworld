@@ -554,9 +554,20 @@ uint8_t I2C_ReceiveData(I2C_TypeDef *I2Cx, I2CDataEndCondition_TypeDef DataCondi
     assert_param(IS_I2C_DATA_END_CONDITION(DataCondition));
 
     if (I2C_Mode_Master == I2C_GetI2CMode(I2Cx)) {
-        while (RESET == (I2C_GetFlagStatus(I2Cx, I2C_FLAG_TXNF)));
+        /* ForgeBox: bounded waits, a stuck bus must not hang the caller (watchdog reset) */
+        uint32_t count = 0;
+        while (RESET == (I2C_GetFlagStatus(I2Cx, I2C_FLAG_TXNF))) {
+            if (count++ > 100000) {
+                return 0;
+            }
+        }
         I2C_MasterGenerateReceiveSCL(I2Cx, DataCondition);
-        while (RESET == (I2C_GetFlagStatus(I2Cx, I2C_FLAG_RXNE)));
+        count = 0;
+        while (RESET == (I2C_GetFlagStatus(I2Cx, I2C_FLAG_RXNE))) {
+            if (count++ > 100000) {
+                return 0;
+            }
+        }
         tmpRet = (uint8_t)I2C_ReadDataFromDR(I2Cx);
     }
 
@@ -567,8 +578,15 @@ void I2C_SendBytes(I2C_TypeDef *I2Cx, uint8_t *Data, uint32_t DataLen, I2CDataEn
 {
     assert_param(IS_I2C_DATA_END_CONDITION(DataCondition));
 
+    uint32_t count = 0;
+
     while (DataLen) {
-        while (RESET == (I2C_GetFlagStatus(I2Cx, I2C_FLAG_TXNF)));
+        /* ForgeBox: bounded wait (was unbounded) */
+        while (RESET == (I2C_GetFlagStatus(I2Cx, I2C_FLAG_TXNF))) {
+            if (count++ > 100000) {
+                return;
+            }
+        }
 
         if (DataLen == 1) {
             I2C_SendData(I2Cx, *Data, DataCondition);
@@ -586,12 +604,20 @@ void I2C_ReceiveBytes(I2C_TypeDef *I2Cx, uint8_t *Data, uint32_t DataLen, I2CDat
     assert_param(IS_I2C_DATA_END_CONDITION(DataCondition));
     uint32_t count = 0;
 
+    uint32_t drain = 0;
     while (RESET != I2C_GetFlagStatus(I2Cx, I2C_FLAG_RXNE)) {
         I2Cx->IC_DATA_CMD;
+        if (drain++ > 1000) {
+            break;
+        }
     }
 
     while (DataLen) {
+        /* ForgeBox: this `continue` used to spin forever while the TX FIFO stayed full */
         if (RESET == (I2C_GetFlagStatus(I2Cx, I2C_FLAG_TXNF))) {
+            if (count++ > 100000) {
+                return;
+            }
             continue;
         }
 
