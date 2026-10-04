@@ -4,6 +4,11 @@
 #include <stdint.h>
 #include "version.h"
 
+/* k3 i18n hook; the hello-world has no translation table. */
+#ifndef _
+#define _(key) "Firmware"
+#endif
+
 #define BOOT_VERSION_ADDR                   0x01002000
 #define BOOT_VERSION_HEAD                   "Boot v"
 #define SOFTWARE_VERSION_MAX_LEN            (32)

@@ -7,6 +7,7 @@
 #include "lvgl.h"
 #include "stdlib.h"
 #include "mhscpu_gpio.h"
+#include "usb_task.h"
 
 #define LVGL_TICK_MS    5
 #define LVGL_GRAM_PIXEL (LCD_DISPLAY_WIDTH * LCD_DISPLAY_HEIGHT / 10)
@@ -70,6 +71,7 @@ static lv_disp_draw_buf_t g_dispBuf;
 static lv_color_t g_lvglCache[LCD_DISPLAY_WIDTH * LCD_DISPLAY_HEIGHT / 10];
 static lv_obj_t *g_container;
 static lv_obj_t *g_hintLabel;
+static lv_obj_t *g_usbLabel;
 static lv_obj_t *g_snakeObjs[MAX_SNAKE_LEN];
 static lv_obj_t *g_foodObj;
 static lv_obj_t *g_logoObj;
@@ -155,6 +157,15 @@ static void HelloWorldTask(void *argument)
     lv_label_set_long_mode(g_hintLabel, LV_LABEL_LONG_WRAP);
     lv_label_set_text(g_hintLabel, hintText);
 
+    // USB link status (ForgeBox Solana, step 1)
+    g_usbLabel = lv_label_create(lv_scr_act());
+    lv_obj_align(g_usbLabel, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_set_width(g_usbLabel, LCD_DISPLAY_WIDTH - 20);
+    lv_obj_set_style_text_color(g_usbLabel, lv_color_hex(0x00FF7F), 0);
+    lv_obj_set_style_text_font(g_usbLabel, &openSansEnText, 0);
+    lv_label_set_long_mode(g_usbLabel, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(g_usbLabel, UsbStatusText());
+
     // Create snake segments
     for (uint16_t i = 0; i < MAX_SNAKE_LEN; i++) {
         g_snakeObjs[i] = lv_obj_create(g_container);
@@ -189,6 +200,7 @@ static void HelloWorldTask(void *argument)
     uint32_t lastUpdate = osKernelGetTickCount();
     uint32_t lastButtonCheck = osKernelGetTickCount();
     uint32_t lastWdtFeed = osKernelGetTickCount();
+    uint32_t usbStatusSeq = UsbStatusSeq();
     
     // Main game loop
     while (1) {
@@ -197,6 +209,11 @@ static void HelloWorldTask(void *argument)
         if (now - lastWdtFeed >= WDT_FEED_INTERVAL_MS) {
             lastWdtFeed = now;
             WDT_ReloadCounter();
+        }
+
+        if (UsbStatusSeq() != usbStatusSeq) {
+            usbStatusSeq = UsbStatusSeq();
+            lv_label_set_text(g_usbLabel, UsbStatusText());
         }
 
         if (now - lastButtonCheck >= BUTTON_CHECK_INTERVAL_MS) {

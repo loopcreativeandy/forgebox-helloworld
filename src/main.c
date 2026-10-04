@@ -9,6 +9,7 @@
 #include "cmsis_os.h"
 #include "mhscpu_wdt.h"
 #include "helloworld_task.h"
+#include "usb_task.h"
 #include "cmsis_os.h"
 
 #define TEST_CMD_MAX_LENGTH     3072
@@ -71,6 +72,7 @@ int main(void)
     
     osKernelInitialize();
     CreateHelloWorldTask();
+    CreateUsbTask();
     WdtInit();
 
     printf("start FreeRTOS scheduler\r\n");

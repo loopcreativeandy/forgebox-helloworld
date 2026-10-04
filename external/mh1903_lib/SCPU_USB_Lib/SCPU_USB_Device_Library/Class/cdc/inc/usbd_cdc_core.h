@@ -12,11 +12,8 @@
 #define __USB_CDC_CORE_H_
 
 #include "usbd_ioreq.h"
-#include "CircularBuffer.h"
 
-#ifndef BUILD_PRODUCTION
-#define USBD_ENABLE_MSC
-#endif
+/* ForgeBox: WinUSB-only (no MSC), same descriptor as a production Keystone 3 */
 
 #ifndef CONFIG_USB_DEVICE_VCP
 /* VCP default Config Start */
@@ -96,15 +93,10 @@ typedef struct _CDC_IF_PROP {
     uint16_t (*pIf_DataRx)(uint8_t* Buf, uint32_t Len);
 } CDC_IF_Prop_TypeDef;
 
-typedef struct {
-    volatile uint8_t COM_config_cmp;
-    CircularBufferStruct* SendBuffer;
-    CircularBufferStruct* ReadBuffer;
-} CDC_Data_TypeDef;
-
-extern CDC_Data_TypeDef CDCData;
 
 extern USBD_Class_cb_TypeDef USBD_CDC_cb;
+void USBD_cdc_TxPump(void);
+void USBD_cdc_SendBuffer_Cb(const uint8_t *data, uint32_t len);
 
 #endif // __USB_CDC_CORE_H_
 

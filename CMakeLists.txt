@@ -16,6 +16,8 @@ set(COMMON_DEFINITIONS
     ARM_MATH_CM4
     __TARGET_FPU_VFP
     NDEBUG
+    CONFIG_USB_DEVICE_MSC=1
+    CONFIG_MHSCPU_MH1903=1
 )
 
 # Include paths
@@ -37,6 +39,9 @@ set(EXTERNAL_INCLUDE_PATH
     external/mh1903_lib/MHSCPU_Driver/inc
     external/mh1903_lib/Device/MegaHunt/mhscpu/Include
     external/mh1903_lib/CMSIS/Include
+    external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_OTG_Driver/inc
+    external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Core/inc
+    external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Class/cdc/inc
 )
 
 set(SRC_INCLUDE_PATH
@@ -46,6 +51,8 @@ set(SRC_INCLUDE_PATH
     src/driver
     src/ram
     src/utils
+    src/driver/usb
+    src/usb
 )
 
 set(INCLUDE_DIR
@@ -79,6 +86,17 @@ file(GLOB_RECURSE FREERTOS
     "external/FreeRTOS/rtos_expand.c"
 )
 
+# USB device stack (Keystone's patched copy; device mode + cdc/WinUSB class only)
+set(USB_LIB
+    external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_OTG_Driver/src/usb_core.c
+    external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_OTG_Driver/src/usb_dcd.c
+    external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_OTG_Driver/src/usb_dcd_int.c
+    external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Core/src/usbd_core.c
+    external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Core/src/usbd_req.c
+    external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Core/src/usbd_ioreq.c
+    external/mh1903_lib/SCPU_USB_Lib/SCPU_USB_Device_Library/Class/cdc/src/usbd_cdc_core.c
+)
+
 # MH1903 driver source files
 aux_source_directory(external/mh1903_lib/MHSCPU_Driver/src/ MH1903_DRIVER)
 
@@ -107,11 +125,21 @@ set(APP_SRC
     src/ui/imgDevLogo.c
     src/ui/openSansEnTitle.c
     src/ui/openSansEnText.c
+    src/driver/usb/drv_usb.c
+    src/driver/usb/usb_bsp.c
+    src/driver/usb/usbd_cdc_vcp.c
+    src/driver/usb/usbd_composite.c
+    src/driver/usb/usbd_desc.c
+    src/driver/usb/usbd_usr.c
+    src/usb/usb_task.c
+    src/usb/eapdu.c
+    src/usb/eapdu_framing.c
 )
 
 set(objsrc 
     ${MH1903_DRIVER}
     ${APP_SRC}
+    ${USB_LIB}
     ${FREERTOS}
     ${LVGL}
     external/mh1903_lib/Device/MegaHunt/mhscpu/Source/GCC/startup_mhscpu.s
